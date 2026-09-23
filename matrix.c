@@ -1,10 +1,15 @@
 #include "matrix.h"
 
 
+/*
+* Calling ALU for dividing 2 `long int` costs ~14-96 cycles
+* Calling ALU for shifting and bitwise AND costs 1 cycle each | int >> power = int / 2^power | int & 0b(power of 1s) = int % 2^power
+*/
+
 
 inline long matrix_get_row_offset(long row, long cols) {
     // div computes divition and module, so no need to change on ">> 4"
-    return row * (cols / 8 + !!(cols % 8));
+    return row * ((cols >> 3) + !!(cols & 0b111));
 }
 
 inline struct matrix* create_matrix(long rows, long cols) {
@@ -20,19 +25,40 @@ inline struct matrix* create_matrix(long rows, long cols) {
     return m;
 }
 
+inline void matrix_free(struct matrix* m) {
+    free(m->data);
+    free(m);
+}
+
 inline int matrix_set_bit(struct matrix* m, long row, long col) {
     if (row >= m->rows || col >= m->cols) return -1;
     long byte_pos = matrix_get_row_offset(row, m->cols);
 
-    m->data[byte_pos + (col / 8)] |= 1 << col % 8;
+    m->data[byte_pos + (col >> 3)] |= 1 << (col & 0b111);
     return 0;
 }
 
-inline int matrix_get_bit(struct matrix* m,int row, int col) {
+inline int matrix_get_bit(struct matrix* m, int row, int col) {
     if (row >= m->rows || col >= m->cols) return -1;
     long byte_pos = matrix_get_row_offset(row, m->cols);
 
-    return (m->data[byte_pos + (col / 8)] >> (col % 8)) & 1;
+    return (m->data[byte_pos + (col >> 3)] >> (col & 0b111)) & 1;
+}
+
+inline int matrix_get_byte(struct matrix* m, int row, int col, uint8_t* out) {
+    if (row >= m->rows || col + 8 >= m->cols) return -1;
+
+    long byte_pos = matrix_get_row_offset(row, m->cols);
+
+    // & 0b111 same with % 8
+    int bit_offset = col & 0b111;
+
+    if (bit_offset) {
+        *out = m->data[byte_pos] << bit_offset;
+        *out |= m->data[byte_pos + 1] >> 10 - bit_offset;
+    } else *out = m->data[byte_pos];
+
+    return 0;
 }
 
 inline int matrix_xor_rows(struct matrix* m, long target, long source) {
@@ -41,8 +67,8 @@ inline int matrix_xor_rows(struct matrix* m, long target, long source) {
     long start_target = matrix_get_row_offset(target, m->cols);
     long start_source = matrix_get_row_offset(source, m->cols);
 
-    long bytes_in_line = m->cols / 8 + !!(m->cols % 8);
-    for (register long byte = 0; byte < bytes_in_line; byte += 1)
+    long bytes_in_line = (m->cols >> 3) + !!(m->cols & 0b111);
+    for (long byte = 0; byte < bytes_in_line; byte += 1)
         m->data[start_target + byte] ^= m->data[start_source + byte];
 
     return 0;
@@ -54,7 +80,7 @@ inline int matrix_swap_rows(struct matrix* m, long target, long source) {
     long start_target = matrix_get_row_offset(target, m->cols);
     long start_source = matrix_get_row_offset(source, m->cols);
 
-    long length = m->cols / 8 + !!(m->cols % 8);
+    long length = (m->cols >> 3) + !!(m->cols & 0b111);
     uint8_t* row = (uint8_t*)malloc(length);
     if (!row) return -1;
 
@@ -65,11 +91,6 @@ inline int matrix_swap_rows(struct matrix* m, long target, long source) {
 
     free(row);
     return 0;
-}
-
-inline void matrix_free(struct matrix* m) {
-    free(m->data);
-    free(m);
 }
 
 void print_matrix(const struct matrix* m) {
@@ -90,9 +111,9 @@ void print_matrix(const struct matrix* m) {
 struct matrix* matrix_mul(struct matrix* m1, struct matrix* m2) {
     if (m1->cols != m2->rows) return 0;
 
-    struct matrix* res = matrix_create(m1->rows, m2->cols);
+    struct matrix* res = create_matrix(m1->rows, m2->cols);
     for (int row = 0; row < res->rows; row += 1) {
-        for (int row = 0; row < res->rows; row += 1) {
+        for (int col = 0; col < res->cols; col += 1) {
             int val = 0;
 
             for(int r = 0; r < m1->rows; r += 1) {

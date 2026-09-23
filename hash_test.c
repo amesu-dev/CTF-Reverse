@@ -7,6 +7,9 @@
 #include "math.h"
 
 
+void bit_choice_func(unsigned char* dummy, int col) {
+    dummy[col / 6] = 1 << col % 6;
+}
 
 int main() {
     long long a = 0x10000000;
@@ -20,7 +23,8 @@ int main() {
 
     const unsigned int target_hash = 0xAB8140DE; 
     unsigned char solution[16] = {0, 0, 0, 0, 0x10, 0x10, 'A', 'M', 'E', 'S', 'U'};
-    solve_linear_system(target_hash, 128);
+    // solve_linear_system(target_hash, 128);
+    solve_nonlinear_system(target_hash, 96, 16, bit_choice_func);
 
     return 0;
 }

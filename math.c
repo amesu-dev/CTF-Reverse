@@ -36,30 +36,10 @@ void solve_space_free(struct solve_space* space) {
     free(space);
 }
 
-unsigned int solve_linear_system(int target_hash, int cols_count) {
-    struct matrix* matrix = create_matrix(32, cols_count + 1);
-    
-    // Filling matrix
-    unsigned char dummy[16] = {0};
-    for (int col = 0; col < matrix->cols - 1; col += 1) {
-        memset(dummy, 0, sizeof(dummy));
-        dummy[col / 8] = 1 << col % 8;
-        
-        unsigned int res = hash(dummy, 16);
-        
-        for (int bit = 0; bit < matrix->rows; bit += 1) {
-            if (res & (1 << bit)) matrix_set_bit(matrix, matrix->rows - bit - 1, col);
-        }
-    }
-
-    // unsigned int target_hash = 0xAB8140DE;
-    for (int bit = 0; bit < 32; bit += 1) {
-        if ((target_hash >> bit) & 1) matrix_set_bit(matrix, 31 - bit, 128);
-    }
-
+unsigned int solve_matrix(struct matrix* matrix) {
     int rank = 0;
     int* pivot_cols = (int*)malloc(matrix->rows * sizeof(int));
-
+    
     for (int col = 0; col < matrix->cols; col += 1) {
         int pivot = -1;
         for (int row = rank; row < matrix->rows; row += 1) {
@@ -140,16 +120,72 @@ unsigned int solve_linear_system(int target_hash, int cols_count) {
         num_free += 1;
     }
 
+    return space;
+}
+
+unsigned int solve_linear_system(int target_hash, int cols_count) {
+    struct matrix* matrix = create_matrix(32, cols_count + 1);
+    
+    // Filling matrix
+    unsigned char dummy[16] = {0};
+    for (int col = 0; col < matrix->cols - 1; col += 1) {
+        memset(dummy, 0, sizeof(dummy));
+        dummy[col / 8] = 1 << col % 8;
+        
+        unsigned int res = hash(dummy, 16);
+        
+        for (int bit = 0; bit < matrix->rows; bit += 1) {
+            if (res & (1 << bit)) matrix_set_bit(matrix, matrix->rows - bit - 1, col);
+        }
+    }
+
+    // unsigned int target_hash = 0xAB8140DE;
+    for (int bit = 0; bit < 32; bit += 1) {
+        if ((target_hash >> bit) & 1) matrix_set_bit(matrix, 31 - bit, 128);
+    }
+
+
+    struct * space = solve_matrix(matrix);
+
+    // Printing results
     print_matrix(matrix);
     printf("------------\n");
     print_matrix(space->nullspace);
     printf("------------\n");
     printf("Solution part: %s (0x%016X)\n", (char*)space->part, *(uint64_t*)space->part);
 
+    matrix_free(matrix);
+    
     generate_messages(target_hash, space);
 
-    matrix_free(matrix);
     return 0;
+}
+
+// void bit_choice_func(unsigned char*, int col)
+unsigned int solve_nonlinear_system(int target_hash, long cols_count, int dummy_size, void(*bit_choice_func)(unsigned char*, int)) {
+    struct matrix* matrix = create_matrix(32, cols_count + 1);
+    
+    // Filling matrix
+    unsigned char dummy[dummy_size] = {0};
+    for (int col = 0; col < matrix->cols - 1; col += 1) {
+        memset(dummy, 0, sizeof(dummy));
+
+        // User defined func that change dummy nonlineary
+        bit_choice_func(dummy, col);
+        
+        unsigned int res = hash(dummy, 16);
+        
+        for (int bit = 0; bit < matrix->rows; bit += 1) {
+            if (res & (1 << bit)) matrix_set_bit(matrix, matrix->rows - bit - 1, col);
+        }
+    }
+
+    // unsigned int target_hash = 0xAB8140DE;
+    for (int bit = 0; bit < 32; bit += 1) {
+        if ((target_hash >> bit) & 1) matrix_set_bit(matrix, 31 - bit, cols_count);
+    }
+
+    return solve_matrix(matrix);
 }
 
 unsigned int generate_messages(int target_hash, struct solve_space* space) {
